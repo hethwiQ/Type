@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <title>&lt;?&gt;</title>
+    <meta property="og:title" content="&lt;?&gt;">
+    <meta property="og:type" content="website">
+    <meta name="twitter:title" content="&lt;?&gt;">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="icon" type="image/x-icon" href="img/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png">
+    <link rel="manifest" href="img/site.webmanifest">
+    
+    <link rel="mask-icon" href="img/safari-pinned-tab.svg" color="#25ff00">
+    <meta name="msapplication-TileColor" content="#050505">
+    <meta name="theme-color" content="#050505">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap');
+
+        body {
+            background-color: #050505;
+            margin: 0;
+            padding: 20px;
+            overflow-x: hidden; 
+        }
+
+        .term-green {
+            color: #25ff00;
+            text-shadow: 0 0 2px rgba(203, 254, 182, 0.7);
+            letter-spacing: 0.06em;
+            font-size: 1.3em;
+            font-family: "Source Code Pro", monospace;
+            font-style: normal;
+            font-weight: 400;
+            line-height: 1.5rem;
+            text-transform: uppercase;
+            word-break: break-all;
+        }
+
+        .line {
+            display: block;
+            word-wrap: break-word;
+            margin-bottom: 4px;
+            white-space: pre-wrap; 
+        }
+
+        .time {
+            font-style: italic;
+        }
+
+        .Cursor_cursor__2bnRT {
+            animation: Cursor_cursor__2bnRT 1.2s infinite;
+        }
+
+        @keyframes Cursor_cursor__2bnRT {
+            0% { opacity: 0; }
+            60%, 80% { opacity: 1; }
+            81%, 100% { opacity: 0; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="term-green" id="terminal">
+        <div id="chat-history"></div>
+
+        <div class="line active-line"><span class="prompt"></span><span class="text"></span><span class="Cursor_cursor__2bnRT cursor">&lt;?&gt;</span></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, push, onChildAdded, remove, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        /*
+        ====================================================================================
+        🔥 FIREBASE SETUP DOCUMENTATION (For Real-Time Chat) 🔥
+        ====================================================================================
+        If you are ready to make this terminal live and sync across multiple users on 
+        GitHub Pages, follow these exact steps to set up a free Firebase Realtime Database.
+
+        STEP 1: CREATE A FIREBASE PROJECT
+        1. Go to https://console.firebase.google.com/
+        2. Click "Add project" and give it a name.
+        3. You can disable Google Analytics for this project. Click "Create project".
+
+        STEP 2: SET UP REALTIME DATABASE
+        1. On the left-hand menu, expand "Build" and click "Realtime Database".
+        2. Click "Create Database".
+        3. Choose a location (default is fine) and click "Next".
+        4. Select "Start in test mode" and click "Enable".
+
+        STEP 3: GET YOUR CONFIG CODE
+        1. Click the gear icon ⚙️ next to "Project Overview" in the top left and select "Project settings".
+        2. Scroll down to the "Your apps" section.
+        3. Click the Web icon (</>) to add a web app.
+        4. Give it a nickname (e.g., "Terminal App") and click "Register app".
+        5. You will see a block of code labeled "const firebaseConfig = { ... }".
+        6. Copy those exact values and paste them into the "firebaseConfig" variable below.
+
+        STEP 4: UNLOCK DATABASE RULES (CRITICAL!)
+        By default, Firebase will eventually block access if you don't change the rules.
+        1. Go back to "Realtime Database" on the left menu.
+        2. Click the "Rules" tab at the top.
+        3. Replace the existing code with exactly this:
+           {
+             "rules": {
+               ".read": "true",
+               ".write": "true"
+             }
+           }
+        4. Click "Publish". (Ignore the warning about security—we want it public!).
+
+        You are now fully live. Push your code to GitHub Pages and test it out!
+        ====================================================================================
+        */
+
+        // ⚠️ PASTE FIREBASE CONFIG HERE WHEN READY ⚠️
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com", 
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const messagesRef = ref(db, 'messages'); 
+
+        // ⚠️ System hash ⚠️
+        const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd"; 
+        
+        async function hashText(text) {
+            const msgBuffer = new TextEncoder().encode(text);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        
+        let terminalState = "START"; 
+        let unsubChildAdded = null;
+        let unsubValue = null;
+
+        const activeLine = document.querySelector('.active-line');
+        const textSpan = activeLine.querySelector('.text');
+        const promptSpan = document.querySelector('.prompt');
+        const chatHistory = document.getElementById('chat-history');
+
+        function bootFirebaseChat() {
+            chatHistory.innerHTML = ''; 
+
+            // Clear any old listeners before attaching new ones
+            if (unsubValue) unsubValue();
+            if (unsubChildAdded) unsubChildAdded();
+
+            unsubValue = onValue(messagesRef, (snapshot) => {
+                if (!snapshot.exists()) chatHistory.innerHTML = '';
+            });
+
+            // This automatically pulls down ALL historical messages when you log in
+            unsubChildAdded = onChildAdded(messagesRef, (snapshot) => {
+                const data = snapshot.val();
+                const msgTime = data.time ? '<span class="time">{' + data.time + '}</span> ' : '';
+                const newLine = document.createElement('div');
+                newLine.className = 'line';
+                newLine.innerHTML = '<span class="prompt">&gt; </span>' + msgTime + '<span class="text">' + data.text + ' &lt;?&gt;</span>';
+                chatHistory.appendChild(newLine);
+                window.scrollTo(0, document.body.scrollHeight);
+            });
+        }
+
+        function printLocalMessage(msg) {
+            const newLine = document.createElement('div');
+            newLine.className = 'line';
+            newLine.innerHTML = '<span class="prompt">&gt; </span><span class="text">' + msg + '</span>';
+            chatHistory.appendChild(newLine);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        document.addEventListener('keydown', async function(e) {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+            if (terminalState === "START") {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    terminalState = "LOGIN";
+                    promptSpan.textContent = '> ENTER SYSTEM KEY: '; 
+                } else {
+                    e.preventDefault(); 
+                }
+                return;
+            }
+
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const currentText = textSpan.textContent.trim();
+                
+                // DEV TOOL: Create Hash
+                if (currentText.startsWith('/hash ')) {
+                    const wordToHash = currentText.replace('/hash ', '').toUpperCase();
+                    const generatedHash = await hashText(wordToHash);
+                    printLocalMessage(`GENERATED HASH FOR [${wordToHash}]:`);
+                    printLocalMessage(generatedHash);
+                    textSpan.textContent = '';
+                    return;
+                }
+
+                // STATE: Login Screen
+                if (terminalState === "LOGIN") {
+                    const inputHash = await hashText(currentText.toUpperCase());
+                    
+                    if (inputHash === SYSTEM_HASH) {
+                        printLocalMessage("ACCESS GRANTED. CONNECTING TO SECURE SERVER...");
+                        textSpan.textContent = '';
+                        promptSpan.textContent = '> '; 
+                        terminalState = "CHAT";
+                        setTimeout(() => { bootFirebaseChat(); }, 1200);
+                    } else {
+                        printLocalMessage("ACCESS DENIED.");
+                        textSpan.textContent = '';
+                    }
+                    return;
+                }
+
+                // STATE: Awaiting Clear Confirmation
+                if (terminalState === "CONFIRM_CLEAR") {
+                    if (currentText.toUpperCase() === 'Y') {
+                        remove(messagesRef);
+                    } else {
+                        printLocalMessage("CLEAR CANCELLED.");
+                    }
+                    terminalState = "CHAT";
+                    textSpan.textContent = '';
+                    return;
+                }
+
+                // STATE: Awaiting Exit Confirmation
+                if (terminalState === "CONFIRM_EXIT") {
+                    if (currentText.toUpperCase() === 'Y') {
+                        // --- SOFT RESET LOGIC ---
+                        if (unsubValue) unsubValue();
+                        if (unsubChildAdded) unsubChildAdded();
+                        
+                        chatHistory.innerHTML = ''; 
+                        terminalState = "START";
+                        promptSpan.textContent = ''; 
+                        textSpan.textContent = '';
+                    } else {
+                        printLocalMessage("EXIT CANCELLED.");
+                        terminalState = "CHAT";
+                        textSpan.textContent = '';
+                    }
+                    return;
+                }
+
+                // STATE: Normal Chat
+                if (terminalState === "CHAT") {
+                    if (currentText === '/clear') {
+                        terminalState = "CONFIRM_CLEAR";
+                        printLocalMessage("CONFIRM CLEAR? [Y/N]");
+                        textSpan.textContent = '';
+                    } 
+                    else if (currentText === '/exit') {
+                        terminalState = "CONFIRM_EXIT";
+                        printLocalMessage("CONFIRM EXIT? [Y/N]");
+                        textSpan.textContent = '';
+                    }
+                    else if (currentText.length > 0) {
+                        const now = new Date();
+                        const hours = String(now.getHours()).padStart(2, '0');
+                        const minutes = String(now.getMinutes()).padStart(2, '0');
+                        const seconds = String(now.getSeconds()).padStart(2, '0');
+                        
+                        push(messagesRef, { text: currentText, time: `${hours}:${minutes}:${seconds}` });
+                        textSpan.textContent = '';
+                    }
+                }
+            } 
+            else if (e.key === 'Backspace') {
+                e.preventDefault();
+                textSpan.textContent = textSpan.textContent.slice(0, -1);
+            } 
+            else if (e.key.length === 1) {
+                e.preventDefault(); 
+                textSpan.textContent += e.key;
+            }
+        });
+    </script>
+</body>
+
+</html>
