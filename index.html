@@ -26,7 +26,6 @@
             margin: 0;
             padding: 20px;
             overflow-x: hidden; 
-            min-height: 100vh; 
         }
 
         .term-green {
@@ -62,23 +61,13 @@
             60%, 80% { opacity: 1; }
             81%, 100% { opacity: 0; }
         }
-
-        #hidden-input {
-            position: fixed; 
-            top: 50%;
-            left: -9999px;
-            opacity: 0;
-            z-index: -1;
-            pointer-events: none;
-        }
     </style>
 </head>
 
 <body>
-    <input type="text" id="hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-
     <div class="term-green" id="terminal">
         <div id="chat-history"></div>
+
         <div class="line active-line"><span class="prompt"></span><span class="text"></span><span class="Cursor_cursor__2bnRT cursor">&lt;?&gt;</span></div>
     </div>
 
@@ -129,7 +118,7 @@
         ====================================================================================
         */
 
-        // ⚠️ PASTE YOUR FIREBASE CONFIG HERE WHEN READY ⚠️
+        // ⚠️ PASTE FIREBASE CONFIG HERE WHEN READY ⚠️
         const firebaseConfig = {
             apiKey: "YOUR_API_KEY",
             authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -158,31 +147,15 @@
         let unsubChildAdded = null;
         let unsubValue = null;
 
-        const hiddenInput = document.getElementById('hidden-input');
         const activeLine = document.querySelector('.active-line');
         const textSpan = activeLine.querySelector('.text');
         const promptSpan = document.querySelector('.prompt');
         const chatHistory = document.getElementById('chat-history');
 
-        // FIXED: Tapping the screen wakes up the terminal AND focuses the keyboard
-        document.addEventListener('click', () => {
-            hiddenInput.focus();
-            if (terminalState === "START") {
-                terminalState = "LOGIN";
-                promptSpan.textContent = '> ENTER SYSTEM KEY: '; 
-            }
-        });
-        
-        hiddenInput.focus();
-
-        hiddenInput.addEventListener('input', () => {
-            textSpan.textContent = hiddenInput.value;
-            window.scrollTo(0, document.body.scrollHeight); 
-        });
-
         function bootFirebaseChat() {
             chatHistory.innerHTML = ''; 
 
+            // Clear any old listeners before attaching new ones
             if (unsubValue) unsubValue();
             if (unsubChildAdded) unsubChildAdded();
 
@@ -190,6 +163,7 @@
                 if (!snapshot.exists()) chatHistory.innerHTML = '';
             });
 
+            // This automatically pulls down ALL historical messages when you log in
             unsubChildAdded = onChildAdded(messagesRef, (snapshot) => {
                 const data = snapshot.val();
                 const msgTime = data.time ? '<span class="time">{' + data.time + '}</span> ' : '';
@@ -209,7 +183,9 @@
             window.scrollTo(0, document.body.scrollHeight);
         }
 
-        hiddenInput.addEventListener('keydown', async function(e) {
+        document.addEventListener('keydown', async function(e) {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
             if (terminalState === "START") {
                 if (e.key === 'Enter') {
                     e.preventDefault();
@@ -218,42 +194,41 @@
                 } else {
                     e.preventDefault(); 
                 }
-                hiddenInput.value = '';
                 return;
             }
 
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const currentText = hiddenInput.value.trim();
+                const currentText = textSpan.textContent.trim();
                 
+                // DEV TOOL: Create Hash
                 if (currentText.startsWith('/hash ')) {
                     const wordToHash = currentText.replace('/hash ', '').toUpperCase();
                     const generatedHash = await hashText(wordToHash);
                     printLocalMessage(`GENERATED HASH FOR [${wordToHash}]:`);
                     printLocalMessage(generatedHash);
-                    hiddenInput.value = '';
                     textSpan.textContent = '';
                     return;
                 }
 
+                // STATE: Login Screen
                 if (terminalState === "LOGIN") {
                     const inputHash = await hashText(currentText.toUpperCase());
                     
                     if (inputHash === SYSTEM_HASH) {
                         printLocalMessage("ACCESS GRANTED. CONNECTING TO SECURE SERVER...");
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                         promptSpan.textContent = '> '; 
                         terminalState = "CHAT";
                         setTimeout(() => { bootFirebaseChat(); }, 1200);
                     } else {
                         printLocalMessage("ACCESS DENIED.");
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                     }
                     return;
                 }
 
+                // STATE: Awaiting Clear Confirmation
                 if (terminalState === "CONFIRM_CLEAR") {
                     if (currentText.toUpperCase() === 'Y') {
                         remove(messagesRef);
@@ -261,41 +236,39 @@
                         printLocalMessage("CLEAR CANCELLED.");
                     }
                     terminalState = "CHAT";
-                    hiddenInput.value = '';
                     textSpan.textContent = '';
                     return;
                 }
 
+                // STATE: Awaiting Exit Confirmation
                 if (terminalState === "CONFIRM_EXIT") {
                     if (currentText.toUpperCase() === 'Y') {
+                        // --- SOFT RESET LOGIC ---
                         if (unsubValue) unsubValue();
                         if (unsubChildAdded) unsubChildAdded();
                         
                         chatHistory.innerHTML = ''; 
                         terminalState = "START";
                         promptSpan.textContent = ''; 
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                     } else {
                         printLocalMessage("EXIT CANCELLED.");
                         terminalState = "CHAT";
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                     }
                     return;
                 }
 
+                // STATE: Normal Chat
                 if (terminalState === "CHAT") {
                     if (currentText === '/clear') {
                         terminalState = "CONFIRM_CLEAR";
                         printLocalMessage("CONFIRM CLEAR? [Y/N]");
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                     } 
                     else if (currentText === '/exit') {
                         terminalState = "CONFIRM_EXIT";
                         printLocalMessage("CONFIRM EXIT? [Y/N]");
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                     }
                     else if (currentText.length > 0) {
@@ -305,10 +278,17 @@
                         const seconds = String(now.getSeconds()).padStart(2, '0');
                         
                         push(messagesRef, { text: currentText, time: `${hours}:${minutes}:${seconds}` });
-                        hiddenInput.value = '';
                         textSpan.textContent = '';
                     }
                 }
+            } 
+            else if (e.key === 'Backspace') {
+                e.preventDefault();
+                textSpan.textContent = textSpan.textContent.slice(0, -1);
+            } 
+            else if (e.key.length === 1) {
+                e.preventDefault(); 
+                textSpan.textContent += e.key;
             }
         });
     </script>
