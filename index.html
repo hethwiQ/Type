@@ -5,18 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
-    <!-- Meta Tags for Social Sharing -->
     <title>&lt;?&gt;</title>
     <meta property="og:title" content="&lt;?&gt;">
     <meta property="og:type" content="website">
     <meta name="twitter:title" content="&lt;?&gt;">
     <meta name="twitter:card" content="summary_large_image">
 
-    <!-- Favicons & App Icons -->
     <link rel="icon" type="image/x-icon" href="img/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png">
     
-    <!-- Theme Colors -->
     <link rel="mask-icon" href="img/safari-pinned-tab.svg" color="#25ff00">
     <meta name="msapplication-TileColor" content="#050505">
     <meta name="theme-color" content="#050505">
@@ -29,7 +26,7 @@
             margin: 0;
             padding: 20px;
             overflow-x: hidden; 
-            min-height: 100vh; /* Ensures clicking low on screen still focuses */
+            min-height: 100vh; 
         }
 
         .term-green {
@@ -66,19 +63,18 @@
             81%, 100% { opacity: 0; }
         }
 
-        /* Invisible input box that triggers mobile keyboards */
         #hidden-input {
-            position: absolute;
+            position: fixed; 
+            top: 50%;
+            left: -9999px;
             opacity: 0;
             z-index: -1;
             pointer-events: none;
-            left: -9999px;
         }
     </style>
 </head>
 
 <body>
-    <!-- Hidden element driving the text entry functionality -->
     <input type="text" id="hidden-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
 
     <div class="term-green" id="terminal">
@@ -148,7 +144,7 @@
         const db = getDatabase(app);
         const messagesRef = ref(db, 'messages'); 
 
-        // ⚠️ System hash ⚠️ (Default hash for "TRUTH")
+        // ⚠️ System hash ⚠️
         const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd"; 
         
         async function hashText(text) {
@@ -168,13 +164,20 @@
         const promptSpan = document.querySelector('.prompt');
         const chatHistory = document.getElementById('chat-history');
 
-        // Mobile focus triggers
-        document.addEventListener('click', () => hiddenInput.focus());
+        // FIXED: Tapping the screen wakes up the terminal AND focuses the keyboard
+        document.addEventListener('click', () => {
+            hiddenInput.focus();
+            if (terminalState === "START") {
+                terminalState = "LOGIN";
+                promptSpan.textContent = '> ENTER SYSTEM KEY: '; 
+            }
+        });
+        
         hiddenInput.focus();
 
-        // Dynamically track keyboard input
         hiddenInput.addEventListener('input', () => {
             textSpan.textContent = hiddenInput.value;
+            window.scrollTo(0, document.body.scrollHeight); 
         });
 
         function bootFirebaseChat() {
@@ -223,7 +226,6 @@
                 e.preventDefault();
                 const currentText = hiddenInput.value.trim();
                 
-                // DEV TOOL: Create Hash
                 if (currentText.startsWith('/hash ')) {
                     const wordToHash = currentText.replace('/hash ', '').toUpperCase();
                     const generatedHash = await hashText(wordToHash);
@@ -234,7 +236,6 @@
                     return;
                 }
 
-                // STATE: Login Screen
                 if (terminalState === "LOGIN") {
                     const inputHash = await hashText(currentText.toUpperCase());
                     
@@ -253,7 +254,6 @@
                     return;
                 }
 
-                // STATE: Awaiting Clear Confirmation
                 if (terminalState === "CONFIRM_CLEAR") {
                     if (currentText.toUpperCase() === 'Y') {
                         remove(messagesRef);
@@ -266,7 +266,6 @@
                     return;
                 }
 
-                // STATE: Awaiting Exit Confirmation
                 if (terminalState === "CONFIRM_EXIT") {
                     if (currentText.toUpperCase() === 'Y') {
                         if (unsubValue) unsubValue();
@@ -286,7 +285,6 @@
                     return;
                 }
 
-                // STATE: Normal Chat
                 if (terminalState === "CHAT") {
                     if (currentText === '/clear') {
                         terminalState = "CONFIRM_CLEAR";
