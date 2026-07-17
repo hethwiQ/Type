@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
+
     <title>&lt;?&gt;</title>
     <meta property="og:title" content="&lt;?&gt;">
     <meta property="og:type" content="website">
@@ -13,7 +13,7 @@
 
     <link rel="icon" type="image/x-icon" href="img/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="img/apple-touch-icon.png">
-    
+
     <link rel="mask-icon" href="img/safari-pinned-tab.svg" color="#25ff00">
     <meta name="msapplication-TileColor" content="#050505">
     <meta name="theme-color" content="#050505">
@@ -25,7 +25,7 @@
             background-color: #050505;
             margin: 0;
             padding: 20px;
-            overflow-x: hidden; 
+            overflow-x: hidden;
         }
 
         .term-green {
@@ -45,7 +45,7 @@
             display: block;
             word-wrap: break-word;
             margin-bottom: 4px;
-            white-space: pre-wrap; 
+            white-space: pre-wrap;
         }
 
         .time {
@@ -57,9 +57,19 @@
         }
 
         @keyframes Cursor_cursor__2bnRT {
-            0% { opacity: 0; }
-            60%, 80% { opacity: 1; }
-            81%, 100% { opacity: 0; }
+            0% {
+                opacity: 0;
+            }
+
+            60%,
+            80% {
+                opacity: 1;
+            }
+
+            81%,
+            100% {
+                opacity: 0;
+            }
         }
 
         .cursor-start {
@@ -74,7 +84,7 @@
             border: none;
             padding: 0;
             margin: 0;
-            font-size: 16px; 
+            font-size: 16px;
             pointer-events: none;
             z-index: -1;
         }
@@ -85,7 +95,9 @@
     <div class="term-green" id="terminal">
         <div id="chat-history"></div>
 
-        <div class="line active-line"><span class="prompt"></span><span class="text"></span><span id="main-cursor" class="Cursor_cursor__2bnRT cursor cursor-start">&lt;?&gt;</span><input type="text" id="mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="line active-line"><span class="prompt"></span><span class="text"></span><span id="main-cursor"
+                class="Cursor_cursor__2bnRT cursor cursor-start">&lt;?&gt;</span><input type="text" id="mobile-input"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
     </div>
 
     <script type="module">
@@ -105,18 +117,18 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
-        const messagesRef = ref(db, 'messages'); 
+        const messagesRef = ref(db, 'messages');
 
-        const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd"; 
-        
+        const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd";
+
         async function hashText(text) {
             const msgBuffer = new TextEncoder().encode(text);
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
-        
-        let terminalState = "START"; 
+
+        let terminalState = "START";
         let unsubChildAdded = null;
         let unsubValue = null;
 
@@ -138,9 +150,9 @@
         function wakeTerminal() {
             if (terminalState === "START") {
                 terminalState = "LOGIN";
-                promptSpan.textContent = '> ENTER SYSTEM KEY: '; 
-                mainCursor.classList.remove('cursor-start'); 
-                mobileInput.focus(); 
+                promptSpan.textContent = '> ENTER SYSTEM KEY: ';
+                mainCursor.classList.remove('cursor-start');
+                mobileInput.focus();
             }
         }
 
@@ -151,7 +163,7 @@
         });
 
         function bootFirebaseChat() {
-            chatHistory.innerHTML = ''; 
+            chatHistory.innerHTML = '';
 
             if (unsubValue) unsubValue();
             if (unsubChildAdded) unsubChildAdded();
@@ -180,18 +192,18 @@
             window.scrollTo(0, document.body.scrollHeight);
         }
 
-        document.addEventListener('keydown', async function(e) {
-            
-            mobileInput.focus(); 
+        document.addEventListener('keydown', async function (e) {
+
+            mobileInput.focus();
 
             if (e.ctrlKey || e.metaKey || e.altKey) return;
 
             if (terminalState === "START") {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    wakeTerminal(); 
+                    wakeTerminal();
                 } else {
-                    e.preventDefault(); 
+                    e.preventDefault();
                 }
                 mobileInput.value = '';
                 textSpan.textContent = '';
@@ -201,7 +213,7 @@
             if (e.key === 'Enter') {
                 e.preventDefault();
                 const currentText = mobileInput.value.trim();
-                
+
                 if (currentText.startsWith('/hash ')) {
                     const wordToHash = currentText.replace('/hash ', '').toUpperCase();
                     const generatedHash = await hashText(wordToHash);
@@ -214,12 +226,12 @@
 
                 if (terminalState === "LOGIN") {
                     const inputHash = await hashText(currentText.toUpperCase());
-                    
+
                     if (inputHash === SYSTEM_HASH) {
                         printLocalMessage("ACCESS GRANTED. CONNECTING TO SECURE SERVER...");
                         mobileInput.value = '';
                         textSpan.textContent = '';
-                        promptSpan.textContent = '> '; 
+                        promptSpan.textContent = '> ';
                         terminalState = "CHAT";
                         setTimeout(() => { bootFirebaseChat(); }, 1200);
                     } else {
@@ -246,13 +258,13 @@
                     if (currentText.toUpperCase() === 'Y') {
                         if (unsubValue) unsubValue();
                         if (unsubChildAdded) unsubChildAdded();
-                        
-                        chatHistory.innerHTML = ''; 
+
+                        chatHistory.innerHTML = '';
                         terminalState = "START";
-                        promptSpan.textContent = ''; 
+                        promptSpan.textContent = '';
                         mobileInput.value = '';
                         textSpan.textContent = '';
-                        
+
                         mainCursor.classList.add('cursor-start');
                     } else {
                         printLocalMessage("EXIT CANCELLED.");
@@ -269,7 +281,7 @@
                         printLocalMessage("CONFIRM CLEAR? [Y/N]");
                         mobileInput.value = '';
                         textSpan.textContent = '';
-                    } 
+                    }
                     else if (currentText === '/exit') {
                         terminalState = "CONFIRM_EXIT";
                         printLocalMessage("CONFIRM EXIT? [Y/N]");
@@ -281,13 +293,13 @@
                         const hours = String(now.getHours()).padStart(2, '0');
                         const minutes = String(now.getMinutes()).padStart(2, '0');
                         const seconds = String(now.getSeconds()).padStart(2, '0');
-                        
+
                         push(messagesRef, { text: currentText, time: `${hours}:${minutes}:${seconds}` });
                         mobileInput.value = '';
                         textSpan.textContent = '';
                     }
                 }
-            } 
+            }
         });
     </script>
 </body>
