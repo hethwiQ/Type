@@ -61,6 +61,11 @@
             60%, 80% { opacity: 1; }
             81%, 100% { opacity: 0; }
         }
+
+        /* --- ADDED: Clickable cursor style for the start screen --- */
+        .cursor-start {
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -68,72 +73,30 @@
     <div class="term-green" id="terminal">
         <div id="chat-history"></div>
 
-        <div class="line active-line"><span class="prompt"></span><span class="text"></span><span class="Cursor_cursor__2bnRT cursor">&lt;?&gt;</span></div>
+        <!-- ADDED: id="main-cursor" and "cursor-start" class -->
+        <div class="line active-line"><span class="prompt"></span><span class="text"></span><span id="main-cursor" class="Cursor_cursor__2bnRT cursor cursor-start">&lt;?&gt;</span></div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getDatabase, ref, push, onChildAdded, remove, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-        /*
-        ====================================================================================
-        🔥 FIREBASE SETUP DOCUMENTATION (For Real-Time Chat) 🔥
-        ====================================================================================
-        If you are ready to make this terminal live and sync across multiple users on 
-        GitHub Pages, follow these exact steps to set up a free Firebase Realtime Database.
-
-        STEP 1: CREATE A FIREBASE PROJECT
-        1. Go to https://console.firebase.google.com/
-        2. Click "Add project" and give it a name.
-        3. You can disable Google Analytics for this project. Click "Create project".
-
-        STEP 2: SET UP REALTIME DATABASE
-        1. On the left-hand menu, expand "Build" and click "Realtime Database".
-        2. Click "Create Database".
-        3. Choose a location (default is fine) and click "Next".
-        4. Select "Start in test mode" and click "Enable".
-
-        STEP 3: GET YOUR CONFIG CODE
-        1. Click the gear icon ⚙️ next to "Project Overview" in the top left and select "Project settings".
-        2. Scroll down to the "Your apps" section.
-        3. Click the Web icon (</>) to add a web app.
-        4. Give it a nickname (e.g., "Terminal App") and click "Register app".
-        5. You will see a block of code labeled "const firebaseConfig = { ... }".
-        6. Copy those exact values and paste them into the "firebaseConfig" variable below.
-
-        STEP 4: UNLOCK DATABASE RULES (CRITICAL!)
-        By default, Firebase will eventually block access if you don't change the rules.
-        1. Go back to "Realtime Database" on the left menu.
-        2. Click the "Rules" tab at the top.
-        3. Replace the existing code with exactly this:
-           {
-             "rules": {
-               ".read": "true",
-               ".write": "true"
-             }
-           }
-        4. Click "Publish". (Ignore the warning about security—we want it public!).
-
-        You are now fully live. Push your code to GitHub Pages and test it out!
-        ====================================================================================
-        */
-
-        // ⚠️ PASTE FIREBASE CONFIG HERE WHEN READY ⚠️
+        // 🔥 FIREBASE CONFIG INTEGRATED HERE 🔥
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com", 
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyAaTjcne7xS1vjS7Tr14WfmWQmZSPhZ_lA",
+            authDomain: "truth-terminal.firebaseapp.com",
+            databaseURL: "https://truth-terminal-default-rtdb.firebaseio.com",
+            projectId: "truth-terminal",
+            storageBucket: "truth-terminal.firebasestorage.app",
+            messagingSenderId: "759983527117",
+            appId: "1:759983527117:web:df735315b379cd9bee0584",
+            measurementId: "G-TFB06KC8N9"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const messagesRef = ref(db, 'messages'); 
 
-        // ⚠️ System hash ⚠️
         const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd"; 
         
         async function hashText(text) {
@@ -151,11 +114,23 @@
         const textSpan = activeLine.querySelector('.text');
         const promptSpan = document.querySelector('.prompt');
         const chatHistory = document.getElementById('chat-history');
+        const mainCursor = document.getElementById('main-cursor');
+
+        // --- ADDED: Unified wake function for both click and Enter ---
+        function wakeTerminal() {
+            if (terminalState === "START") {
+                terminalState = "LOGIN";
+                promptSpan.textContent = '> ENTER SYSTEM KEY: '; 
+                mainCursor.classList.remove('cursor-start'); // Changes it back to a normal cursor
+            }
+        }
+
+        // --- ADDED: Click listener directly on the start cursor ---
+        mainCursor.addEventListener('click', wakeTerminal);
 
         function bootFirebaseChat() {
             chatHistory.innerHTML = ''; 
 
-            // Clear any old listeners before attaching new ones
             if (unsubValue) unsubValue();
             if (unsubChildAdded) unsubChildAdded();
 
@@ -163,7 +138,6 @@
                 if (!snapshot.exists()) chatHistory.innerHTML = '';
             });
 
-            // This automatically pulls down ALL historical messages when you log in
             unsubChildAdded = onChildAdded(messagesRef, (snapshot) => {
                 const data = snapshot.val();
                 const msgTime = data.time ? '<span class="time">{' + data.time + '}</span> ' : '';
@@ -189,8 +163,7 @@
             if (terminalState === "START") {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    terminalState = "LOGIN";
-                    promptSpan.textContent = '> ENTER SYSTEM KEY: '; 
+                    wakeTerminal(); // Uses the new wake function
                 } else {
                     e.preventDefault(); 
                 }
@@ -201,7 +174,6 @@
                 e.preventDefault();
                 const currentText = textSpan.textContent.trim();
                 
-                // DEV TOOL: Create Hash
                 if (currentText.startsWith('/hash ')) {
                     const wordToHash = currentText.replace('/hash ', '').toUpperCase();
                     const generatedHash = await hashText(wordToHash);
@@ -211,7 +183,6 @@
                     return;
                 }
 
-                // STATE: Login Screen
                 if (terminalState === "LOGIN") {
                     const inputHash = await hashText(currentText.toUpperCase());
                     
@@ -228,7 +199,6 @@
                     return;
                 }
 
-                // STATE: Awaiting Clear Confirmation
                 if (terminalState === "CONFIRM_CLEAR") {
                     if (currentText.toUpperCase() === 'Y') {
                         remove(messagesRef);
@@ -240,10 +210,8 @@
                     return;
                 }
 
-                // STATE: Awaiting Exit Confirmation
                 if (terminalState === "CONFIRM_EXIT") {
                     if (currentText.toUpperCase() === 'Y') {
-                        // --- SOFT RESET LOGIC ---
                         if (unsubValue) unsubValue();
                         if (unsubChildAdded) unsubChildAdded();
                         
@@ -251,6 +219,9 @@
                         terminalState = "START";
                         promptSpan.textContent = ''; 
                         textSpan.textContent = '';
+                        
+                        // Restores the clickable cursor when you lock the terminal
+                        mainCursor.classList.add('cursor-start');
                     } else {
                         printLocalMessage("EXIT CANCELLED.");
                         terminalState = "CHAT";
@@ -259,7 +230,6 @@
                     return;
                 }
 
-                // STATE: Normal Chat
                 if (terminalState === "CHAT") {
                     if (currentText === '/clear') {
                         terminalState = "CONFIRM_CLEAR";
