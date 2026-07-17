@@ -138,7 +138,7 @@
         let terminalState = "START";
         let unsubChildAdded = null;
         let unsubValue = null;
-        let lastRenderedDate = null; 
+        let lastRenderedDate = null;
 
         const activeLine = document.querySelector('.active-line');
         const textSpan = activeLine.querySelector('.text');
@@ -172,7 +172,7 @@
 
         function bootFirebaseChat() {
             chatHistory.innerHTML = '';
-            lastRenderedDate = null; 
+            lastRenderedDate = null;
 
             if (unsubValue) unsubValue();
             if (unsubChildAdded) unsubChildAdded();
@@ -265,7 +265,7 @@
                 if (terminalState === "CONFIRM_CLEAR") {
                     if (currentText.toUpperCase() === 'Y') {
                         remove(messagesRef);
-                        lastRenderedDate = null; 
+                        lastRenderedDate = null;
                     } else {
                         printLocalMessage("CLEAR CANCELLED.");
                     }
@@ -314,14 +314,14 @@
                         printLocalMessage("FETCHING SECURE PAYLOAD...");
                         mobileInput.value = '';
                         textSpan.textContent = '';
-                        
+
                         try {
                             // The encoded URL points exactly to admin
                             const targetUrl = atob("aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2hldGh3aVEvc2l0ZWFzc2V0cy9yZWZzL2hlYWRzL21haW4vRmlsZXMvYWRtaW4udHh0");
                             const response = await fetch(targetUrl);
-                            
+
                             if (!response.ok) throw new Error("PAYLOAD MISSING");
-                            
+
                             const data = await response.text();
                             printLocalMessage(data);
                         } catch (error) {
