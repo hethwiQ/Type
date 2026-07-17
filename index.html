@@ -127,7 +127,6 @@
         const mainCursor = document.getElementById('main-cursor');
         const mobileInput = document.getElementById('mobile-input');
 
-        // Auto-focus the input as soon as the page loads
         window.addEventListener('DOMContentLoaded', () => {
             mobileInput.focus();
         });
@@ -166,7 +165,8 @@
                 const msgTime = data.time ? '<span class="time">{' + data.time + '}</span> ' : '';
                 const newLine = document.createElement('div');
                 newLine.className = 'line';
-                newLine.innerHTML = '<span class="prompt">&gt; </span>' + msgTime + '<span class="text">' + data.text + ' &lt;?&gt;</span>';
+                // FIXED: Removed the hardcoded &lt;?&gt; here!
+                newLine.innerHTML = '<span class="prompt">&gt; </span>' + msgTime + '<span class="text">' + data.text + '</span>';
                 chatHistory.appendChild(newLine);
                 window.scrollTo(0, document.body.scrollHeight);
             });
@@ -180,10 +180,8 @@
             window.scrollTo(0, document.body.scrollHeight);
         }
 
-        // FIXED: Reverted listener back to the 'document' so it always catches the Enter key!
         document.addEventListener('keydown', async function(e) {
             
-            // Ensure any keypress attempts to focus the input just in case
             mobileInput.focus(); 
 
             if (e.ctrlKey || e.metaKey || e.altKey) return;
