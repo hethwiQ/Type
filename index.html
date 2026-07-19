@@ -59,24 +59,59 @@
             margin-bottom: 5px;
         }
 
+        .system-msg {
+            font-style: italic;
+        }
+
+        /* --- UPDATED: Hyperlink Base Styling --- */
+        .term-link {
+            color: #25ff00;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        /* --- ADDED: Dynamic Cursor-Following Tooltip --- */
+        #cursor-tooltip {
+            position: fixed;
+            background-color: #111;
+            color: #25ff00;
+            padding: 2px 6px;
+            font-size: 0.65rem;
+            border: 1px solid #25ff00;
+            border-radius: 2px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none; /* Prevents tooltip from blocking the actual click */
+            z-index: 9999;
+            transition: opacity 0.1s ease;
+            font-family: "Source Code Pro", monospace;
+        }
+
+        #typing-indicator-line {
+            display: none;
+            margin-bottom: 4px;
+        }
+
+        .dots::after {
+            content: '';
+            animation: blinkDots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes blinkDots {
+            0%, 100% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+        }
+
         .Cursor_cursor__2bnRT {
             animation: Cursor_cursor__2bnRT 1.2s infinite;
         }
 
         @keyframes Cursor_cursor__2bnRT {
-            0% {
-                opacity: 0;
-            }
-
-            60%,
-            80% {
-                opacity: 1;
-            }
-
-            81%,
-            100% {
-                opacity: 0;
-            }
+            0% { opacity: 0; }
+            60%, 80% { opacity: 1; }
+            81%, 100% { opacity: 0; }
         }
 
         .cursor-start {
@@ -99,8 +134,13 @@
 </head>
 
 <body>
+    <!-- ADDED: The global floating tooltip element -->
+    <div id="cursor-tooltip">CTRL + CLICK TO OPEN LINK</div>
+
     <div class="term-green" id="terminal">
         <div id="chat-history"></div>
+
+        <div class="line" id="typing-indicator-line"><span class="prompt">&gt;&gt; </span>[<span class="dots"></span>]</div>
 
         <div class="line active-line"><span class="prompt"></span><span class="text"></span><span id="main-cursor"
                 class="Cursor_cursor__2bnRT cursor cursor-start">&lt;?&gt;</span><input type="text" id="mobile-input"
@@ -109,7 +149,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, push, onChildAdded, remove, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, push, onChildAdded, remove, onValue, get, set, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAaTjcne7xS1vjS7Tr14WfmWQmZSPhZ_lA",
@@ -127,6 +167,10 @@
         const messagesRef = ref(db, 'messages');
 
         const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd";
+        let userPassphrase = ""; 
+
+        const mySessionId = Math.random().toString(36).substring(2, 10);
+        let typingTimeout = null;
 
         async function hashText(text) {
             const msgBuffer = new TextEncoder().encode(text);
@@ -135,28 +179,101 @@
             return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
+        async function deriveUniqueKey(passphrase, saltBytes) {
+            const enc = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                "raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]
+            );
+            return crypto.subtle.deriveKey(
+                { name: "PBKDF2", salt: saltBytes, iterations: 100000, hash: "SHA-256" },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        async function encryptMessage(plaintext) {
+            const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            
+            const messageKey = await deriveUniqueKey(userPassphrase, saltBytes);
+            const encoded = new TextEncoder().encode(plaintext);
+            
+            const ciphertext = await crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv },
+                messageKey,
+                encoded
+            );
+            
+            return {
+                cipher: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+                iv: btoa(String.fromCharCode(...iv)),
+                salt: btoa(String.fromCharCode(...saltBytes))
+            };
+        }
+
+        async function decryptMessage(cipherB64, ivB64, saltB64) {
+            try {
+                const ciphertext = new Uint8Array(atob(cipherB64).split("").map(c => c.charCodeAt(0)));
+                const iv = new Uint8Array(atob(ivB64).split("").map(c => c.charCodeAt(0)));
+                const saltBytes = new Uint8Array(atob(saltB64).split("").map(c => c.charCodeAt(0)));
+                
+                const messageKey = await deriveUniqueKey(userPassphrase, saltBytes);
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    messageKey,
+                    ciphertext
+                );
+                return new TextDecoder().decode(decrypted);
+            } catch (e) {
+                return "[UNAUTHORIZED: ENCRYPTED_LOG_GIBBERISH]";
+            }
+        }
+
         let terminalState = "START";
         let unsubChildAdded = null;
         let unsubValue = null;
+        let unsubTyping = null;
         let lastRenderedDate = null;
+        
+        let lastMessageTime = 0; 
+        const RATE_LIMIT_MS = 1500; 
 
         const activeLine = document.querySelector('.active-line');
         const textSpan = activeLine.querySelector('.text');
-        const promptSpan = document.querySelector('.prompt');
+        const promptSpan = activeLine.querySelector('.prompt'); 
         const chatHistory = document.getElementById('chat-history');
         const mainCursor = document.getElementById('main-cursor');
         const mobileInput = document.getElementById('mobile-input');
+        const typingIndicatorLine = document.getElementById('typing-indicator-line');
+        const cursorTooltip = document.getElementById('cursor-tooltip'); // Grab tooltip element
+
+        let connectionVerified = false;
+        const connectionTimeout = setTimeout(() => {
+            if (!connectionVerified) {
+                terminalState = "OVERFLOW";
+                document.body.innerHTML = '<div class="term-green" style="font-style: italic;">&gt;&gt; ERROR: OVERSESSION EXCEEDED. SERVER FULL.</div>';
+            }
+        }, 5000);
+
+        onValue(ref(db, ".info/connected"), (snap) => {
+            if (snap.val() === true) {
+                connectionVerified = true;
+                clearTimeout(connectionTimeout);
+            }
+        });
 
         window.addEventListener('DOMContentLoaded', () => {
-            mobileInput.focus();
+            if(terminalState !== "OVERFLOW") mobileInput.focus();
         });
 
         document.addEventListener('click', () => {
-            mobileInput.focus();
+            if(terminalState !== "OVERFLOW") mobileInput.focus();
         });
 
         function wakeTerminal() {
-            if (terminalState === "START") {
+            if (terminalState === "START" && terminalState !== "OVERFLOW") {
                 terminalState = "LOGIN";
                 promptSpan.textContent = '> ENTER SYSTEM KEY: ';
                 mainCursor.classList.remove('cursor-start');
@@ -166,9 +283,99 @@
 
         mainCursor.addEventListener('click', wakeTerminal);
 
+        function updateTypingState(isTyping) {
+            if (terminalState !== "CHAT") return;
+            const myTypingRef = ref(db, `typing/${mySessionId}`);
+            if (isTyping) {
+                set(myTypingRef, true);
+                onDisconnect(myTypingRef).remove();
+            } else {
+                remove(myTypingRef);
+            }
+        }
+
         mobileInput.addEventListener('input', () => {
+            if (terminalState === "START" || terminalState === "OVERFLOW") {
+                mobileInput.value = '';
+                textSpan.textContent = '';
+                return;
+            }
             textSpan.textContent = mobileInput.value;
+
+            if (terminalState === "CHAT") {
+                updateTypingState(mobileInput.value.length > 0);
+                
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    updateTypingState(false);
+                }, 2000);
+            }
         });
+
+        async function runEphemeralCleanup() {
+            printLocalMessage("RUNNING EPHEMERAL PURGE ENGINE...");
+            const snapshot = await get(messagesRef);
+            if (snapshot.exists()) {
+                const nowMs = Date.now();
+                const oneDayMs = 24 * 60 * 60 * 1000; 
+                let purgeCount = 0;
+
+                snapshot.forEach((childSnapshot) => {
+                    const data = childSnapshot.val();
+                    if (data.timestamp && (nowMs - data.timestamp > oneDayMs)) {
+                        remove(ref(db, `messages/${childSnapshot.key}`));
+                        purgeCount++;
+                    }
+                });
+                if (purgeCount > 0) {
+                    printLocalMessage(`SUCCESS: PURGED ${purgeCount} EXPIRED DATABASE LOGS.`);
+                } else {
+                    printLocalMessage("SYSTEM CHECK: ALL RECENT RECORDS VALID.");
+                }
+            }
+        }
+
+        function parseAndAppendTextWithLinks(parentElement, rawString) {
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const parts = rawString.split(urlRegex);
+
+            parts.forEach(part => {
+                if (part.match(urlRegex)) {
+                    const linkEl = document.createElement('a');
+                    linkEl.className = 'term-link';
+                    linkEl.textContent = part;
+                    
+                    linkEl.addEventListener('click', (e) => {
+                        if (e.ctrlKey || e.metaKey) {
+                            window.open(part, '_blank', 'noopener,noreferrer');
+                        } else {
+                            e.preventDefault();
+                            printLocalMessage("NOTICE: HOLD CTRL KEY + CLICK TO EXECUTE LINK PATHWAY.");
+                        }
+                    });
+
+                    // --- UPDATED: Tooltip logic bound to cursor movement ---
+                    linkEl.addEventListener('mouseenter', () => {
+                        cursorTooltip.style.opacity = '1';
+                    });
+                    
+                    linkEl.addEventListener('mousemove', (e) => {
+                        // Offset by a few pixels so the mouse doesn't cover the box
+                        cursorTooltip.style.left = (e.clientX + 12) + 'px';
+                        cursorTooltip.style.top = (e.clientY + 12) + 'px';
+                    });
+
+                    linkEl.addEventListener('mouseleave', () => {
+                        cursorTooltip.style.opacity = '0';
+                    });
+
+                    parentElement.appendChild(linkEl);
+                } else {
+                    const textNode = document.createTextNode(part);
+                    parentElement.appendChild(textNode);
+                }
+            });
+        }
 
         function bootFirebaseChat() {
             chatHistory.innerHTML = '';
@@ -176,6 +383,7 @@
 
             if (unsubValue) unsubValue();
             if (unsubChildAdded) unsubChildAdded();
+            if (unsubTyping) unsubTyping();
 
             unsubValue = onValue(messagesRef, (snapshot) => {
                 if (!snapshot.exists()) {
@@ -184,22 +392,63 @@
                 }
             });
 
-            unsubChildAdded = onChildAdded(messagesRef, (snapshot) => {
+            unsubChildAdded = async (snapshot) => {
                 const data = snapshot.val();
 
                 if (data.date && data.date !== lastRenderedDate) {
                     const dateLine = document.createElement('div');
                     dateLine.className = 'line date-header';
-                    dateLine.innerHTML = `[ LOG DATE: ${data.date} ]`;
+                    dateLine.textContent = `[ LOG DATE: ${data.date} ]`;
                     chatHistory.appendChild(dateLine);
                     lastRenderedDate = data.date;
                 }
 
-                const msgTime = data.time ? '<span class="time">{' + data.time + '}</span> ' : '';
+                let displayedText = "[CORRUPT ENCRYPTED PAYLOAD]";
+                if (data.encryptedPayload) {
+                    displayedText = await decryptMessage(data.encryptedPayload.cipher, data.encryptedPayload.iv, data.encryptedPayload.salt);
+                } else if (data.text) {
+                    displayedText = data.text; 
+                }
+
                 const newLine = document.createElement('div');
                 newLine.className = 'line';
-                newLine.innerHTML = '<span class="prompt">&gt; </span>' + msgTime + '<span class="text">' + data.text + '</span>';
+                
+                const promptEl = document.createElement('span');
+                promptEl.className = 'prompt';
+                promptEl.textContent = '> ';
+                newLine.appendChild(promptEl);
+                
+                if (data.time) {
+                    const timeEl = document.createElement('span');
+                    timeEl.className = 'time';
+                    timeEl.textContent = `{${data.time}} `;
+                    newLine.appendChild(timeEl);
+                }
+
+                const textEl = document.createElement('span');
+                textEl.className = 'text';
+                
+                parseAndAppendTextWithLinks(textEl, displayedText);
+                newLine.appendChild(textEl);
+                
                 chatHistory.appendChild(newLine);
+                window.scrollTo(0, document.body.scrollHeight);
+            };
+            
+            onChildAdded(messagesRef, unsubChildAdded);
+
+            unsubTyping = onValue(ref(db, 'typing'), (snapshot) => {
+                let showIndicator = false;
+                if (snapshot.exists()) {
+                    const statuses = snapshot.val();
+                    for (let id in statuses) {
+                        if (id !== mySessionId && statuses[id] === true) {
+                            showIndicator = true;
+                            break;
+                        }
+                    }
+                }
+                typingIndicatorLine.style.display = showIndicator ? 'block' : 'none';
                 window.scrollTo(0, document.body.scrollHeight);
             });
         }
@@ -207,13 +456,25 @@
         function printLocalMessage(msg) {
             const newLine = document.createElement('div');
             newLine.className = 'line';
-            newLine.innerHTML = '<span class="prompt">&gt; </span><span class="text">' + msg + '</span>';
+            
+            const prompt = document.createElement('span');
+            prompt.className = 'prompt';
+            prompt.textContent = '>> ';
+            
+            const text = document.createElement('span');
+            text.className = 'text system-msg';
+            
+            parseAndAppendTextWithLinks(text, msg);
+            
+            newLine.appendChild(prompt);
+            newLine.appendChild(text);
+
             chatHistory.appendChild(newLine);
             window.scrollTo(0, document.body.scrollHeight);
         }
 
         document.addEventListener('keydown', async function (e) {
-
+            if (terminalState === "OVERFLOW") return;
             mobileInput.focus();
 
             if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -248,12 +509,17 @@
                     const inputHash = await hashText(currentText.toUpperCase());
 
                     if (inputHash === SYSTEM_HASH) {
-                        printLocalMessage("ACCESS GRANTED. CONNECTING TO SECURE SERVER...");
+                        userPassphrase = currentText.toUpperCase(); 
+                        
+                        printLocalMessage("ACCESS GRANTED. MEMORY PARSING INITIALIZED...");
+                        
+                        await runEphemeralCleanup();
+                        
                         mobileInput.value = '';
                         textSpan.textContent = '';
                         promptSpan.textContent = '> ';
                         terminalState = "CHAT";
-                        setTimeout(() => { bootFirebaseChat(); }, 1200);
+                        setTimeout(() => { bootFirebaseChat(); }, 800);
                     } else {
                         printLocalMessage("ACCESS DENIED.");
                         mobileInput.value = '';
@@ -262,12 +528,12 @@
                     return;
                 }
 
-                if (terminalState === "CONFIRM_CLEAR") {
+                if (terminalState === "CONFIRM_PURGE") {
                     if (currentText.toUpperCase() === 'Y') {
                         remove(messagesRef);
                         lastRenderedDate = null;
                     } else {
-                        printLocalMessage("CLEAR CANCELLED.");
+                        printLocalMessage("PURGE CANCELLED.");
                     }
                     terminalState = "CHAT";
                     mobileInput.value = '';
@@ -278,7 +544,9 @@
                 if (terminalState === "CONFIRM_EXIT") {
                     if (currentText.toUpperCase() === 'Y') {
                         if (unsubValue) unsubValue();
-                        if (unsubChildAdded) unsubChildAdded();
+                        if (unsubTyping) unsubTyping();
+                        updateTypingState(false);
+                        userPassphrase = ""; 
 
                         chatHistory.innerHTML = '';
                         lastRenderedDate = null;
@@ -298,37 +566,61 @@
                 }
 
                 if (terminalState === "CHAT") {
-                    if (currentText === '/clear') {
-                        terminalState = "CONFIRM_CLEAR";
-                        printLocalMessage("CONFIRM CLEAR? [Y/N]");
+                    if (currentText === '/help' || currentText === '/h') {
+                        printLocalMessage("SYSTEM COMMANDS:");
+                        printLocalMessage("----------------");
+                        printLocalMessage("/help, /h    : Show this system manual");
+                        printLocalMessage("/purge       : Execute global database wipe");
+                        printLocalMessage("/admin       : Retrieve secure remote payload");
+                        printLocalMessage("/hash [text] : Generate SHA-256 string");
+                        printLocalMessage("/bye        : Terminate secure session");
+                        
                         mobileInput.value = '';
                         textSpan.textContent = '';
+                        return;
                     }
-                    else if (currentText === '/exit') {
+                    else if (currentText === '/purge') {
+                        terminalState = "CONFIRM_PURGE";
+                        printLocalMessage("CONFIRM PURGE? [Y/N]");
+                        mobileInput.value = '';
+                        textSpan.textContent = '';
+                        return;
+                    }
+                    else if (currentText === '/bye') {
                         terminalState = "CONFIRM_EXIT";
                         printLocalMessage("CONFIRM EXIT? [Y/N]");
                         mobileInput.value = '';
                         textSpan.textContent = '';
+                        return;
                     }
                     else if (currentText === '/admin') {
                         printLocalMessage("FETCHING SECURE PAYLOAD...");
                         mobileInput.value = '';
                         textSpan.textContent = '';
-
+                        
                         try {
-                            // The encoded URL points exactly to admin
                             const targetUrl = atob("aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2hldGh3aVEvc2l0ZWFzc2V0cy9yZWZzL2hlYWRzL21haW4vRmlsZXMvYWRtaW4udHh0");
                             const response = await fetch(targetUrl);
-
                             if (!response.ok) throw new Error("PAYLOAD MISSING");
-
                             const data = await response.text();
                             printLocalMessage(data);
                         } catch (error) {
                             printLocalMessage("ERROR: ADMIN PAYLOAD OFFLINE.");
                         }
+                        return;
                     }
-                    else if (currentText.length > 0) {
+                    
+                    const currentTime = Date.now();
+                    if (currentTime - lastMessageTime < RATE_LIMIT_MS) {
+                        printLocalMessage("SYSTEM WARNING: FLOOD OVERLOAD PROTECTION ACTIVE. SLOW DOWN.");
+                        mobileInput.value = '';
+                        textSpan.textContent = '';
+                        return;
+                    }
+
+                    if (currentText.length > 0) {
+                        updateTypingState(false); 
+                        lastMessageTime = currentTime; 
                         const now = new Date();
 
                         const year = now.getFullYear();
@@ -340,10 +632,13 @@
                         const minutes = String(now.getMinutes()).padStart(2, '0');
                         const seconds = String(now.getSeconds()).padStart(2, '0');
 
+                        const encryptedPayload = await encryptMessage(currentText);
+
                         push(messagesRef, {
-                            text: currentText,
+                            encryptedPayload: encryptedPayload,
                             time: `${hours}:${minutes}:${seconds}`,
-                            date: dateString
+                            date: dateString,
+                            timestamp: currentTime 
                         });
 
                         mobileInput.value = '';
