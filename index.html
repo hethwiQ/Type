@@ -32,7 +32,6 @@
             color: #25ff00;
             text-shadow: 0 0 2px rgba(203, 254, 182, 0.7);
             letter-spacing: 0.06em;
-            /* UPDATED: Fluid font sizing scaling beautifully from mobile to desktop */
             font-size: clamp(0.95rem, 2.8vw, 1.25rem);
             font-family: "Source Code Pro", monospace;
             font-style: normal;
@@ -45,7 +44,6 @@
             display: block;
             margin-bottom: 6px;
             white-space: pre-wrap;
-            /* UPDATED: Natural text wrapping for regular words, forces split only on long encrypted hashes */
             word-break: normal;
             overflow-wrap: break-word;
         }
@@ -61,7 +59,16 @@
             margin-bottom: 5px;
         }
 
+        /* --- UPDATED: Visual Hierarchy for System Messages --- */
+        .sys-prompt {
+            color: #1a9900; /* Darker green to push system prompts into the background */
+            margin-right: 4px;
+        }
+
         .system-msg {
+            color: #ffffff; /* Muted, slightly pastel green */
+            opacity: 0.8;
+            font-size: 0.9em; /* Slightly smaller to emphasize sub-processes */
             font-style: italic;
         }
 
@@ -309,9 +316,10 @@
                     }
                 });
                 if (purgeCount > 0) {
+                    // CHANGED: Using tree branching
                     printLocalMessage(`SUCCESS: PURGED ${purgeCount} EXPIRED DATABASE LOGS.`);
                 } else {
-                    printLocalMessage("SYSTEM CHECK: ALL RECENT RECORDS VALID.");
+                    printLocalMessage(`SYSTEM CHECK: ALL RECENT RECORDS VALID.`);
                 }
             }
         }
@@ -416,12 +424,13 @@
             onChildAdded(messagesRef, unsubChildAdded);
         }
 
+        // CHANGED: Utilizing the new sys-prompt class for visual hierarchy
         function printLocalMessage(msg) {
             const newLine = document.createElement('div');
             newLine.className = 'line';
             
             const prompt = document.createElement('span');
-            prompt.className = 'prompt';
+            prompt.className = 'sys-prompt';
             prompt.textContent = '>> ';
             
             const text = document.createElement('span');
@@ -461,8 +470,9 @@
                 if (currentText.startsWith('/hash ')) {
                     const wordToHash = currentText.replace('/hash ', '').toUpperCase();
                     const generatedHash = await hashText(wordToHash);
+                    // CHANGED: Tree format implementation
                     printLocalMessage(`GENERATED HASH FOR [${wordToHash}]:`);
-                    printLocalMessage(generatedHash);
+                    printLocalMessage(`${generatedHash}`);
                     mobileInput.value = '';
                     textSpan.textContent = '';
                     return;
@@ -528,8 +538,8 @@
 
                 if (terminalState === "CHAT") {
                     if (currentText === '/help' || currentText === '/h') {
+                        // CHANGED: Rebuilt as a rigid command tree
                         printLocalMessage("SYSTEM COMMANDS:");
-                        printLocalMessage("----------------");
                         printLocalMessage("/help, /h    : Show this system manual");
                         printLocalMessage("/purge       : Execute global database wipe");
                         printLocalMessage("/admin       : Retrieve secure remote payload");
@@ -564,7 +574,8 @@
                             const response = await fetch(targetUrl);
                             if (!response.ok) throw new Error("PAYLOAD MISSING");
                             const data = await response.text();
-                            printLocalMessage(data);
+                            // CHANGED: Tree format implementation
+                            printLocalMessage(`${data}`);
                         } catch (error) {
                             printLocalMessage("ERROR: ADMIN PAYLOAD OFFLINE.");
                         }
