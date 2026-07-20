@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <!-- CHANGED: Added maximum-scale and user-scalable=no to prevent annoying mobile keyboard auto-zoom -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
     <title>&lt;?&gt;</title>
@@ -151,9 +152,8 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const messagesRef = ref(db, 'messages');
-        const canaryRef = ref(db, 'auth_canary');
 
-        const CANARY_EXPECTED = "CANARY_ACTIVE_VALID";
+        const SYSTEM_HASH = "c92bcb2ea7bb84e1c56bd8e0f16b9f01fc8fb928de8ce5f71ca91cb84cc753dd";
         let userPassphrase = ""; 
 
         const mySessionId = Math.random().toString(36).substring(2, 10);
@@ -171,8 +171,7 @@
                 "raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]
             );
             return crypto.subtle.deriveKey(
-                /* CHANGED: Step 2 - Boosted iterations from 100k to 600k for GPU resistance */
-                { name: "PBKDF2", salt: saltBytes, iterations: 600000, hash: "SHA-256" },
+                { name: "PBKDF2", salt: saltBytes, iterations: 100000, hash: "SHA-256" },
                 keyMaterial,
                 { name: "AES-GCM", length: 256 },
                 false,
@@ -271,9 +270,6 @@
             
             if (unsubValue) unsubValue();
             if (unsubChildAdded) unsubChildAdded();
-            
-            // CHANGED: Step 4 - RAM Scrubbing before logging out
-            userPassphrase = "00000000000000000000000000000000";
             userPassphrase = ""; 
             sessionStorage.removeItem('truth_key');
 
@@ -293,7 +289,7 @@
             deathMsg.className = 'line term-green';
             deathMsg.style.fontStyle = 'italic';
             deathMsg.style.opacity = '0.7';
-            deathMsg.textContent = ">> SYSTEM HALTED: 15 MINUTE INACTIVITY TIMEOUT. CONNECTION SEVERED.";
+            deathMsg.textContent = ">> SYSTEM HALTED: 30 MINUTE INACTIVITY TIMEOUT. CONNECTION SEVERED.";
             chatHistory.appendChild(deathMsg);
         }
 
@@ -423,6 +419,7 @@
             unsubChildAdded = async (snapshot) => {
                 const data = snapshot.val();
 
+                // --- ADDED: Check if user is scrolled near the bottom before adding the new message ---
                 const isNearBottom = (document.body.scrollHeight - window.scrollY - window.innerHeight) < 150;
 
                 if (data.date && data.date !== lastRenderedDate) {
@@ -463,6 +460,7 @@
                 
                 chatHistory.appendChild(newLine);
 
+                // --- ADDED: Smart Scroll Logic. Only scrolls down if you were already at the bottom ---
                 if (isNearBottom) {
                     window.scrollTo(0, document.body.scrollHeight);
                 }
@@ -497,6 +495,7 @@
             newLine.appendChild(text);
 
             chatHistory.appendChild(newLine);
+            // System commands and local logs should always snap the user to the bottom to see the result
             window.scrollTo(0, document.body.scrollHeight);
         }
 
@@ -537,42 +536,23 @@
                 }
 
                 if (terminalState === "LOGIN") {
-                    userPassphrase = currentText.toUpperCase();
-                    
-                    try {
-                        const canarySnapshot = await get(canaryRef);
+                    const inputHash = await hashText(currentText.toUpperCase());
+
+                    if (inputHash === SYSTEM_HASH) {
+                        userPassphrase = currentText.toUpperCase(); 
                         
-                        if (!canarySnapshot.exists()) {
-                            printLocalMessage("INITIAL RUN DETECTED. WRITING FIELD CANARY CONFIGURATION...");
-                            const initializedCanary = await encryptMessage(CANARY_EXPECTED);
-                            await set(canaryRef, initializedCanary);
-                        }
+                        sessionStorage.setItem('truth_key', userPassphrase);
                         
-                        const activeCanary = canarySnapshot.exists() ? canarySnapshot.val() : await get(canaryRef).then(s => s.val());
-                        const clearCanaryText = await decryptMessage(activeCanary.cipher, activeCanary.iv, activeCanary.salt);
+                        printLocalMessage("ACCESS GRANTED. MEMORY PARSING INITIALIZED...");
                         
-                        if (clearCanaryText === CANARY_EXPECTED) {
-                            sessionStorage.setItem('truth_key', userPassphrase);
-                            printLocalMessage("ACCESS GRANTED. MEMORY PARSING INITIALIZED...");
-                            await runEphemeralCleanup();
-                            
-                            mobileInput.value = '';
-                            textSpan.textContent = '';
-                            promptSpan.textContent = '> ';
-                            terminalState = "CHAT";
-                            setTimeout(() => { bootFirebaseChat(); }, 800);
-                        } else {
-                            // CHANGED: Step 4 - Scrub memory on failed login
-                            userPassphrase = "00000000000000000000000000000000";
-                            userPassphrase = "";
-                            printLocalMessage("ACCESS DENIED.");
-                            mobileInput.value = '';
-                            textSpan.textContent = '';
-                        }
-                    } catch (err) {
-                        // CHANGED: Step 4 - Scrub memory on error
-                        userPassphrase = "00000000000000000000000000000000";
-                        userPassphrase = "";
+                        await runEphemeralCleanup();
+                        
+                        mobileInput.value = '';
+                        textSpan.textContent = '';
+                        promptSpan.textContent = '> ';
+                        terminalState = "CHAT";
+                        setTimeout(() => { bootFirebaseChat(); }, 800);
+                    } else {
                         printLocalMessage("ACCESS DENIED.");
                         mobileInput.value = '';
                         textSpan.textContent = '';
@@ -583,7 +563,6 @@
                 if (terminalState === "CONFIRM_PURGE") {
                     if (currentText.toUpperCase() === 'Y') {
                         remove(messagesRef);
-                        remove(canaryRef);
                         lastRenderedDate = null;
                     } else {
                         printLocalMessage("PURGE CANCELLED.");
@@ -597,9 +576,6 @@
                 if (terminalState === "CONFIRM_EXIT") {
                     if (currentText.toUpperCase() === 'Y') {
                         if (unsubValue) unsubValue();
-                        
-                        // CHANGED: Step 4 - Scrub memory on explicit logout
-                        userPassphrase = "00000000000000000000000000000000";
                         userPassphrase = ""; 
 
                         sessionStorage.removeItem('truth_key');
@@ -687,12 +663,7 @@
                         textSpan.textContent = '';
                         
                         try {
-                            // CHANGED: Step 3 - Dynamic String Obfuscation to shield from automated scrapers
-                            const p1 = "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlc";
-                            const p2 = "mNvbnRlbnQuY29tL2hldGh3aVEvc2l0ZWFzc";
-                            const p3 = "2V0cy9yZWZzL2hlYWRzL21haW4vRmlsZXMvYWRtaW4udHh0";
-                            const targetUrl = atob(p1 + p2 + p3);
-                            
+                            const targetUrl = atob("aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2hldGh3aVEvc2l0ZWFzc2V0cy9yZWZzL2hlYWRzL21haW4vRmlsZXMvYWRtaW4udHh0");
                             const response = await fetch(targetUrl);
                             if (!response.ok) throw new Error("PAYLOAD MISSING");
                             const data = await response.text();
