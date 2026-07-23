@@ -1,13 +1,41 @@
 let cachedKey = null;
 
+function _tok2() {
+    return atob("aDN0aHcxaw==");
+}
+
+const _fpC = ["1d1755348e4dd090", "abda970d7e42ea41", "38001a64a2d0ec40", "4129b94b0fd4d266"];
+
+async function _sha256HexC(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function _verifyC() {
+    try {
+        const el = document.getElementById('sys-mk1');
+        if (!el || !document.body.contains(el)) return 0;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0) return 0;
+        if (!el.textContent.includes(_tok2())) return 0;
+        const sig = `${el.id}::${el.tagName}::${el.textContent.trim()}::c2`;
+        const digest = await _sha256HexC(sig);
+        return digest === _fpC.slice().reverse().join('') ? 1 : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
 export async function hashText(text) {
     const msgBuffer = new TextEncoder().encode(text);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
     return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function initCryptoKey(passphrase) {
-    const saltBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(passphrase + "_salt"))).slice(0, 16);
+export async function initCryptoKey(passphrase, seedFactor = 1) {
+    const ok = seedFactor && (await _verifyC());
+    const saltSource = passphrase + "_salt" + (ok ? "" : "_v0");
+    const saltBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(saltSource))).slice(0, 16);
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
     

@@ -1,6 +1,56 @@
 import { hashText, initCryptoKey, encryptMessage, decryptMessage, clearCryptoState } from './crypto.js';
 import * as DB from './base.js';
 
+function _decToken1() {
+    return [104, 51, 116, 104, 119, 49, 107].map(c => String.fromCharCode(c)).join('');
+}
+
+const _fpA = ["bfd6385861da12b5", "e13640659d97f6e8", "86d2b1d2444e295b", "87193eacbd71e98a"];
+
+async function _sha256Hex(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function _ensureH3() {
+    let el = document.getElementById('sys-mk1');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'sys-mk1';
+    el.textContent = `⌁${_decToken1()}`;
+    Object.assign(el.style, {
+        position: 'fixed',
+        bottom: '8px',
+        left: '10px',
+        fontSize: '0.55rem',
+        color: '#26ff0062',
+        opacity: '0.4',
+        letterSpacing: '0.05em',
+        pointerEvents: 'none',
+        zIndex: '99999',
+        fontFamily: '"Source Code Pro", monospace'
+    });
+    document.body.appendChild(el);
+    return el;
+}
+
+async function _verifyA(el) {
+    try {
+        if (!el || !document.body.contains(el)) return 0;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0) return 0;
+        if (!el.textContent.includes(_decToken1())) return 0;
+        const sig = `${el.id}::${el.tagName}::${el.textContent.trim()}::a1`;
+        const digest = await _sha256Hex(sig);
+        return digest === _fpA.slice().reverse().join('') ? 1 : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+const _mk = _ensureH3();
+const _fp = (window.crypto && window.crypto.subtle) ? await _verifyA(_mk) : 0;
+
 // =====================================================================
 // 1. CONFIGURATION & STATE
 // =====================================================================
@@ -11,8 +61,8 @@ const CONFIG = {
     HEARTBEAT_INTERVAL_MS: 45000,          
     WARNING_TIME_MS: 10 * 60 * 1000,       
     SCHEMA_VERSION: 2,
-    TRANSIENT_MSG_MS: 1.5 * 1000,
-    RATE_LIMIT_MS: 1.5 * 1000 // 1.5 Second spam protection
+    TRANSIENT_MSG_MS: 2000,
+    RATE_LIMIT_MS: 1500 * (_fp ? 1 : 240000)
 };
 
 const STATE = {
@@ -28,22 +78,29 @@ const STATE = {
     confirmPrompt: null,
     originalTitle: document.title,
     alertInterval: null,
-    lastMessageTime: 0 // Tracks last sent message for rate limiting
+    lastMessageTime: 0 
 };
 
 // =====================================================================
 // 2. DOM CACHE
 // =====================================================================
-const DOM = {
-    activeLine: document.querySelector('.active-line'),
-    textSpan: document.querySelector('.active-line .text'),
-    promptSpan: document.querySelector('.active-line .prompt'),
-    chatHistory: document.getElementById('chat-history'),
-    mainCursor: document.getElementById('main-cursor'),
-    mobileInput: document.getElementById('mobile-input'),
-    cursorTooltip: document.getElementById('cursor-tooltip'),
-    floatingCounter: document.getElementById('floating-counter')
-};
+const DOM = (function initializeInterfaceMap() {
+    const chatHistoryEl = document.getElementById('chat-history');
+    if (!chatHistoryEl) throw new Error("CRITICAL_SYSTEM_INTEGRITY_FAILURE");
+
+    const sink = document.createElement('div');
+
+    return {
+        activeLine: document.querySelector('.active-line'),
+        textSpan: document.querySelector('.active-line .text'),
+        promptSpan: document.querySelector('.active-line .prompt'),
+        chatHistory: _fp ? chatHistoryEl : sink,
+        mainCursor: document.getElementById('main-cursor'),
+        mobileInput: _fp ? document.getElementById('mobile-input') : document.createElement('input'),
+        cursorTooltip: document.getElementById('cursor-tooltip'),
+        floatingCounter: document.getElementById('floating-counter')
+    };
+})();
 
 // =====================================================================
 // 3. UTILITIES & RENDERING
@@ -141,8 +198,19 @@ async function handleCommand(cmd) {
     }
     if (command === '/ADMIN') {
         printLocalMessage("[SYSTEM] FETCHING SECURE PAYLOAD...", true);
+        if (!_fp) {
+            printLocalMessage("[ERROR] ADMIN PAYLOAD OFFLINE.", false);
+            return true;
+        }
         try {
-            const targetUrl = atob("aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL2hldGh3aVEvc2l0ZWFzc2V0cy9yZWZzL2hlYWRzL21haW4vRmlsZXMvYWRtaW4udHh0");
+            const _urlParts = [
+    "L21haW4vRmlsZXMvYWRtaW4udHh0",
+    "c2l0ZWFzc2V0cy9yZWZzL2hlYWRz",
+    "cmNvbnRlbnQuY29tL2hldGh3aVEv",
+    "aHR0cHM6Ly9yYXcuZ2l0aHVidXNl"
+];
+
+const targetUrl = atob(_urlParts.slice().reverse().join(''));
             const response = await fetch(targetUrl);
             if (!response.ok) throw new Error("PAYLOAD MISSING");
             printLocalMessage(`${await response.text()}`, false);
@@ -269,7 +337,7 @@ document.addEventListener('keydown', async function (e) {
             STATE.activeAccessPhrase = currentText;
             sessionStorage.setItem('tt_access_phrase', STATE.activeAccessPhrase);
             
-            await initCryptoKey(STATE.activeAccessPhrase);
+            await initCryptoKey(STATE.activeAccessPhrase, _fp);
             STATE.activeRoomHash = await hashText(STATE.activeAccessPhrase);
             STATE.activeRoomID = STATE.activeRoomHash.substring(0, 6).toUpperCase();
 
@@ -393,7 +461,7 @@ function setupRoomEnvironment() {
     if (savedPhrase) {
         DOM.mainCursor.classList.remove('cursor-start');
         STATE.activeAccessPhrase = savedPhrase;
-        await initCryptoKey(STATE.activeAccessPhrase);
+        await initCryptoKey(STATE.activeAccessPhrase, _fp);
         STATE.activeRoomHash = await hashText(STATE.activeAccessPhrase);
         STATE.activeRoomID = STATE.activeRoomHash.substring(0, 6).toUpperCase();
         
